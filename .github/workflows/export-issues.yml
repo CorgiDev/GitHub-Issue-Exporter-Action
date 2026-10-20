@@ -1,0 +1,53 @@
+name: Export issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: 'GitHub search query, e.g. label:Severity-1,Severity-2 label:service:npm -label:project:npm_cli'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test exporter
+        run: node --test .github/scripts/export-issues.test.mjs
+
+      - name: Export matching issues
+        run: node .github/scripts/export-issues.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPORT_QUERY: ${{ inputs.query }}
+          EXPORT_DIRECTORY: ${{ runner.temp }}/issue-export
+
+      - name: Upload downloadable export
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-export-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-export/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Link download in run summary
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          printf '\n[Download issue export](%s)\n\nExtract the ZIP and open index.html. Artifacts expire after 7 days and require GitHub sign-in with repository read access.\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
